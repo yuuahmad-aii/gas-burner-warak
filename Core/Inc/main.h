@@ -67,6 +67,8 @@ void Error_Handler(void);
 #define E_BTN_GPIO_Port GPIOA
 #define USER_LED_Pin GPIO_PIN_2
 #define USER_LED_GPIO_Port GPIOB
+#define MAX_CS_Pin GPIO_PIN_15
+#define MAX_CS_GPIO_Port GPIOA
 #define O_PEMANTIK_Pin GPIO_PIN_6
 #define O_PEMANTIK_GPIO_Port GPIOB
 #define O_SELENOID_Pin GPIO_PIN_7

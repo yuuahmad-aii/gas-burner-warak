@@ -1,29 +1,30 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2025 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
-#include "usb_device.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "i2c-lcd.h"
+#include "string.h"
+#include "stdio.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -33,6 +34,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+// --- Parameter Kontrol yang Dapat Disesuaikan ---
+#define SET_POINT_TEMP 80.0f     // Setpoint suhu target dalam Celcius
+#define HYSTERESIS 5.0f          // Histeresis untuk mencegah on/off terlalu cepat (pemanas menyala di bawah 75 C)
+#define IGNITION_TIME_MS 3000    // Waktu pemantik menyala sebelum gas (3 detik)
+#define IGNITION_OVERLAP_MS 1000 // Waktu pemantik & gas menyala bersamaan (1 detik)
 
 /* USER CODE END PD */
 
@@ -48,24 +54,58 @@ I2C_HandleTypeDef hi2c2;
 
 SPI_HandleTypeDef hspi1;
 
-/* Definitions for defaultTask */
-osThreadId_t defaultTaskHandle;
-const osThreadAttr_t defaultTask_attributes = {
-  .name = "defaultTask",
-  .stack_size = 128 * 4,
+/* Definitions for ReadTempTask */
+osThreadId_t ReadTempTaskHandle;
+const osThreadAttr_t ReadTempTask_attributes = {
+  .name = "ReadTempTask",
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for ControlTask */
+osThreadId_t ControlTaskHandle;
+const osThreadAttr_t ControlTask_attributes = {
+  .name = "ControlTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for UpdateLCDTask */
+osThreadId_t UpdateLCDTaskHandle;
+const osThreadAttr_t UpdateLCDTask_attributes = {
+  .name = "UpdateLCDTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for systemDataMutex */
+osMutexId_t systemDataMutexHandle;
+const osMutexAttr_t systemDataMutex_attributes = {
+  .name = "systemDataMutex"
+};
 /* USER CODE BEGIN PV */
+
+// --- Variabel Global yang Dishare antar Task ---
+float currentTemperature = -1.0f;
+
+typedef enum
+{
+  STATE_IDLE,
+  STATE_IGNITING,
+  STATE_HEATING,
+  STATE_ERROR
+} SystemState_t;
+
+SystemState_t systemState = STATE_IDLE;
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_ADC1_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_SPI1_Init(void);
-void StartDefaultTask(void *argument);
+static void MX_ADC1_Init(void);
+void StartReadTempTask(void *argument);
+void StartControlTask(void *argument);
+void StartUpdateLCDTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -73,7 +113,19 @@ void StartDefaultTask(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void InitializeSystem()
+{
+   lcd_init(); //sudah diinisialisasi di main
+  lcd_put_cur(0, 0);
+  lcd_send_string("HELLO WORLD");
+  lcd_put_cur(1, 0);
+  lcd_send_string("from CTECH");
 
+  HAL_GPIO_WritePin(O_PEMANTIK_GPIO_Port, O_PEMANTIK_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(O_SELENOID_GPIO_Port, O_SELENOID_Pin, GPIO_PIN_RESET);
+
+  osDelay(5000);
+}
 /* USER CODE END 0 */
 
 /**
@@ -105,15 +157,33 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_ADC1_Init();
   MX_I2C2_Init();
   MX_SPI1_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
+//  lcd_init();
+
+  //// Display Number
+  //  int num = 1234;
+  //  char numChar[5];
+  //  sprintf(numChar, "%d", num);
+  //  lcd_put_cur(0, 0);
+  //  lcd_send_string (numChar);
+
+  //  lcd_init();
+  //  float flt = 12.345;
+  //  char fltChar[6];
+  //  sprintf(fltChar, "%.3f", flt);
+  //  lcd_put_cur(0, 0);
+  //  lcd_send_string (fltChar);
 
   /* USER CODE END 2 */
 
   /* Init scheduler */
   osKernelInitialize();
+  /* Create the mutex(es) */
+  /* creation of systemDataMutex */
+  systemDataMutexHandle = osMutexNew(&systemDataMutex_attributes);
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
@@ -132,15 +202,37 @@ int main(void)
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of defaultTask */
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+  /* creation of ReadTempTask */
+  ReadTempTaskHandle = osThreadNew(StartReadTempTask, NULL, &ReadTempTask_attributes);
+
+  /* creation of ControlTask */
+  ControlTaskHandle = osThreadNew(StartControlTask, NULL, &ControlTask_attributes);
+
+  /* creation of UpdateLCDTask */
+  UpdateLCDTaskHandle = osThreadNew(StartUpdateLCDTask, NULL, &UpdateLCDTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
+  if (ReadTempTaskHandle == NULL)
+  {
+    while (1)
+      ; // Stop execution
+  }
+  if (ControlTaskHandle == NULL)
+  {
+    while (1)
+      ;
+  }
+  if (UpdateLCDTaskHandle == NULL)
+  {
+    while (1)
+      ;
+  }
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
   /* add events, ... */
+  // InitializeSystem();
   /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
@@ -197,9 +289,8 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC|RCC_PERIPHCLK_USB;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
   PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
-  PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLL_DIV1_5;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
@@ -346,10 +437,19 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, USER_LED_Pin|O_PEMANTIK_Pin|O_SELENOID_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : USER_BTN_Pin BTN_HIJAU_Pin BTN_HITAM_Pin E_BTN_Pin */
-  GPIO_InitStruct.Pin = USER_BTN_Pin|BTN_HIJAU_Pin|BTN_HITAM_Pin|E_BTN_Pin;
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(MAX_CS_GPIO_Port, MAX_CS_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : USER_BTN_Pin */
+  GPIO_InitStruct.Pin = USER_BTN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(USER_BTN_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : BTN_HIJAU_Pin BTN_HITAM_Pin E_BTN_Pin */
+  GPIO_InitStruct.Pin = BTN_HIJAU_Pin|BTN_HITAM_Pin|E_BTN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : USER_LED_Pin O_PEMANTIK_Pin O_SELENOID_Pin */
@@ -358,6 +458,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : MAX_CS_Pin */
+  GPIO_InitStruct.Pin = MAX_CS_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(MAX_CS_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -368,24 +475,198 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartDefaultTask */
+/* USER CODE BEGIN Header_StartReadTempTask */
 /**
-  * @brief  Function implementing the defaultTask thread.
-  * @param  argument: Not used
-  * @retval None
-  */
-/* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument)
+ * @brief  Function implementing the ReadTempTask thread.
+ * @param  argument: Not used
+ * @retval None
+ */
+/* USER CODE END Header_StartReadTempTask */
+void StartReadTempTask(void *argument)
 {
-  /* init code for USB_DEVICE */
-  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 5 */
+  uint8_t spiData[2];
+  uint16_t rawTemp;
   /* Infinite loop */
-  for(;;)
+  for (;;)
   {
-    osDelay(1);
+    HAL_GPIO_WritePin(MAX_CS_GPIO_Port, MAX_CS_Pin, GPIO_PIN_RESET);
+    osDelay(10); // Menggunakan osDelay
+
+    if (HAL_SPI_Receive(&hspi1, spiData, 2, HAL_MAX_DELAY) == HAL_OK)
+    {
+      HAL_GPIO_WritePin(MAX_CS_GPIO_Port, MAX_CS_Pin, GPIO_PIN_SET);
+      rawTemp = (spiData[0] << 8) | spiData[1];
+
+      // Menggunakan osMutexWait untuk mengambil mutex
+      if (osMutexWait(systemDataMutexHandle, osWaitForever) == osOK)
+      {
+        if (rawTemp & 0x04)
+        {
+          systemState = STATE_ERROR;
+          currentTemperature = -1.0f;
+        }
+        else
+        {
+          currentTemperature = (rawTemp >> 3) * 0.25f;
+          if (systemState == STATE_ERROR)
+          {
+            systemState = STATE_IDLE;
+          }
+        }
+        osMutexRelease(systemDataMutexHandle); // Melepaskan mutex
+      }
+    }
+    else
+    {
+      HAL_GPIO_WritePin(MAX_CS_GPIO_Port, MAX_CS_Pin, GPIO_PIN_SET);
+      if (osMutexWait(systemDataMutexHandle, osWaitForever) == osOK)
+      {
+        systemState = STATE_ERROR;
+        osMutexRelease(systemDataMutexHandle);
+      }
+    }
+    osDelay(500); // Jeda task
   }
   /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_StartControlTask */
+/**
+ * @brief Function implementing the ControlTask thread.
+ * @param argument: Not used
+ * @retval None
+ */
+/* USER CODE END Header_StartControlTask */
+void StartControlTask(void *argument)
+{
+  /* USER CODE BEGIN StartControlTask */
+  float temp;
+  SystemState_t localState;
+  /* Infinite loop */
+  for (;;)
+  {
+    if (osMutexWait(systemDataMutexHandle, osWaitForever) == osOK)
+    {
+      temp = currentTemperature;
+      localState = systemState;
+      osMutexRelease(systemDataMutexHandle);
+    }
+
+    switch (localState)
+    {
+    case STATE_IDLE:
+      if (temp < (SET_POINT_TEMP - HYSTERESIS) && temp >= 0)
+      {
+        if (osMutexWait(systemDataMutexHandle, osWaitForever) == osOK)
+        {
+          systemState = STATE_IGNITING;
+          osMutexRelease(systemDataMutexHandle);
+        }
+      }
+      break;
+
+    case STATE_IGNITING:
+      HAL_GPIO_WritePin(O_PEMANTIK_GPIO_Port, O_PEMANTIK_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(O_SELENOID_GPIO_Port, O_SELENOID_Pin, GPIO_PIN_RESET);
+      osDelay(IGNITION_TIME_MS);
+
+      HAL_GPIO_WritePin(O_SELENOID_GPIO_Port, O_SELENOID_Pin, GPIO_PIN_SET);
+      osDelay(IGNITION_OVERLAP_MS);
+
+      HAL_GPIO_WritePin(O_PEMANTIK_GPIO_Port, O_PEMANTIK_Pin, GPIO_PIN_RESET);
+
+      if (osMutexWait(systemDataMutexHandle, osWaitForever) == osOK)
+      {
+        systemState = STATE_HEATING;
+        osMutexRelease(systemDataMutexHandle);
+      }
+      break;
+
+    case STATE_HEATING:
+      if (temp >= SET_POINT_TEMP)
+      {
+        HAL_GPIO_WritePin(O_SELENOID_GPIO_Port, O_SELENOID_Pin, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(O_PEMANTIK_GPIO_Port, O_PEMANTIK_Pin, GPIO_PIN_RESET);
+        if (osMutexWait(systemDataMutexHandle, osWaitForever) == osOK)
+        {
+          systemState = STATE_IDLE;
+          osMutexRelease(systemDataMutexHandle);
+        }
+      }
+      break;
+
+    case STATE_ERROR:
+      HAL_GPIO_WritePin(O_SELENOID_GPIO_Port, O_SELENOID_Pin, GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(O_PEMANTIK_GPIO_Port, O_PEMANTIK_Pin, GPIO_PIN_RESET);
+      break;
+    }
+    osDelay(200);
+  }
+  /* USER CODE END StartControlTask */
+}
+
+/* USER CODE BEGIN Header_StartUpdateLCDTask */
+/**
+ * @brief Function implementing the UpdateLCDTask thread.
+ * @param argument: Not used
+ * @retval None
+ */
+/* USER CODE END Header_StartUpdateLCDTask */
+void StartUpdateLCDTask(void *argument)
+{
+  /* USER CODE BEGIN StartUpdateLCDTask */
+  char tempStr[17];
+  char statusStr[17];
+  float temp;
+  SystemState_t localState;
+
+  InitializeSystem();
+
+  /* Infinite loop */
+  for (;;)
+  {
+    if (osMutexWait(systemDataMutexHandle, osWaitForever) == osOK)
+    {
+      temp = currentTemperature;
+      localState = systemState;
+      osMutexRelease(systemDataMutexHandle);
+    }
+
+    if (temp < 0)
+    {
+      sprintf(tempStr, "Suhu: --- C  ");
+    }
+    else
+    {
+      sprintf(tempStr, "Suhu: %.1f C", temp);
+    }
+    sprintf(statusStr, "Set:%.0f  Sts:", SET_POINT_TEMP);
+
+    switch (localState)
+    {
+    case STATE_IDLE:
+      strcat(statusStr, "IDLE ");
+      break;
+    case STATE_IGNITING:
+      strcat(statusStr, "IGNIT");
+      break;
+    case STATE_HEATING:
+      strcat(statusStr, "HEAT ");
+      break;
+    case STATE_ERROR:
+      sprintf(statusStr, "!!SENSOR ERROR!!");
+      break;
+    }
+
+    lcd_put_cur(0, 0);
+    lcd_send_string(tempStr);
+    lcd_put_cur(0, 1);
+    lcd_send_string(statusStr);
+
+    osDelay(1000);
+  }
+  /* USER CODE END StartUpdateLCDTask */
 }
 
 /**
