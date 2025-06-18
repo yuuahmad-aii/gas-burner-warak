@@ -57,29 +57,28 @@ SPI_HandleTypeDef hspi1;
 /* Definitions for ReadTempTask */
 osThreadId_t ReadTempTaskHandle;
 const osThreadAttr_t ReadTempTask_attributes = {
-  .name = "ReadTempTask",
-  .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+    .name = "ReadTempTask",
+    .stack_size = 256 * 4,
+    .priority = (osPriority_t)osPriorityNormal,
 };
 /* Definitions for ControlTask */
 osThreadId_t ControlTaskHandle;
 const osThreadAttr_t ControlTask_attributes = {
-  .name = "ControlTask",
-  .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+    .name = "ControlTask",
+    .stack_size = 512 * 4,
+    .priority = (osPriority_t)osPriorityLow,
 };
 /* Definitions for UpdateLCDTask */
 osThreadId_t UpdateLCDTaskHandle;
 const osThreadAttr_t UpdateLCDTask_attributes = {
-  .name = "UpdateLCDTask",
-  .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+    .name = "UpdateLCDTask",
+    .stack_size = 512 * 4,
+    .priority = (osPriority_t)osPriorityLow,
 };
 /* Definitions for systemDataMutex */
 osMutexId_t systemDataMutexHandle;
 const osMutexAttr_t systemDataMutex_attributes = {
-  .name = "systemDataMutex"
-};
+    .name = "systemDataMutex"};
 /* USER CODE BEGIN PV */
 
 // --- Variabel Global yang Dishare antar Task ---
@@ -115,7 +114,7 @@ void StartUpdateLCDTask(void *argument);
 /* USER CODE BEGIN 0 */
 void InitializeSystem()
 {
-   lcd_init(); //sudah diinisialisasi di main
+  lcd_init(); // sudah diinisialisasi di main
   lcd_put_cur(0, 0);
   lcd_send_string("HELLO WORLD");
   lcd_put_cur(1, 0);
@@ -129,9 +128,9 @@ void InitializeSystem()
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
+ * @brief  The application entry point.
+ * @retval int
+ */
 int main(void)
 {
 
@@ -161,7 +160,7 @@ int main(void)
   MX_SPI1_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-//  lcd_init();
+  //  lcd_init();
 
   //// Display Number
   //  int num = 1234;
@@ -215,18 +214,15 @@ int main(void)
   /* add threads, ... */
   if (ReadTempTaskHandle == NULL)
   {
-    while (1)
-      ; // Stop execution
+    Error_Handler();
   }
   if (ControlTaskHandle == NULL)
   {
-    while (1)
-      ;
+    Error_Handler();
   }
   if (UpdateLCDTaskHandle == NULL)
   {
-    while (1)
-      ;
+    Error_Handler();
   }
   /* USER CODE END RTOS_THREADS */
 
@@ -252,9 +248,9 @@ int main(void)
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
+ * @brief System Clock Configuration
+ * @retval None
+ */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -262,8 +258,8 @@ void SystemClock_Config(void)
   RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
+   * in the RCC_OscInitTypeDef structure.
+   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
@@ -277,9 +273,8 @@ void SystemClock_Config(void)
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+   */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
@@ -298,10 +293,10 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief ADC1 Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief ADC1 Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_ADC1_Init(void)
 {
 
@@ -316,7 +311,7 @@ static void MX_ADC1_Init(void)
   /* USER CODE END ADC1_Init 1 */
 
   /** Common config
-  */
+   */
   hadc1.Instance = ADC1;
   hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
   hadc1.Init.ContinuousConvMode = DISABLE;
@@ -330,7 +325,7 @@ static void MX_ADC1_Init(void)
   }
 
   /** Configure Regular Channel
-  */
+   */
   sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
@@ -341,14 +336,13 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
-
 }
 
 /**
-  * @brief I2C2 Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief I2C2 Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_I2C2_Init(void)
 {
 
@@ -375,14 +369,13 @@ static void MX_I2C2_Init(void)
   /* USER CODE BEGIN I2C2_Init 2 */
 
   /* USER CODE END I2C2_Init 2 */
-
 }
 
 /**
-  * @brief SPI1 Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief SPI1 Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_SPI1_Init(void)
 {
 
@@ -413,14 +406,13 @@ static void MX_SPI1_Init(void)
   /* USER CODE BEGIN SPI1_Init 2 */
 
   /* USER CODE END SPI1_Init 2 */
-
 }
 
 /**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief GPIO Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -435,7 +427,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, USER_LED_Pin|O_PEMANTIK_Pin|O_SELENOID_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, USER_LED_Pin | O_PEMANTIK_Pin | O_SELENOID_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(MAX_CS_GPIO_Port, MAX_CS_Pin, GPIO_PIN_RESET);
@@ -447,13 +439,13 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(USER_BTN_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : BTN_HIJAU_Pin BTN_HITAM_Pin E_BTN_Pin */
-  GPIO_InitStruct.Pin = BTN_HIJAU_Pin|BTN_HITAM_Pin|E_BTN_Pin;
+  GPIO_InitStruct.Pin = BTN_HIJAU_Pin | BTN_HITAM_Pin | E_BTN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : USER_LED_Pin O_PEMANTIK_Pin O_SELENOID_Pin */
-  GPIO_InitStruct.Pin = USER_LED_Pin|O_PEMANTIK_Pin|O_SELENOID_Pin;
+  GPIO_InitStruct.Pin = USER_LED_Pin | O_PEMANTIK_Pin | O_SELENOID_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -670,13 +662,13 @@ void StartUpdateLCDTask(void *argument)
 }
 
 /**
-  * @brief  Period elapsed callback in non blocking mode
-  * @note   This function is called  when TIM4 interrupt took place, inside
-  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
-  * a global variable "uwTick" used as application time base.
-  * @param  htim : TIM handle
-  * @retval None
-  */
+ * @brief  Period elapsed callback in non blocking mode
+ * @note   This function is called  when TIM4 interrupt took place, inside
+ * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+ * a global variable "uwTick" used as application time base.
+ * @param  htim : TIM handle
+ * @retval None
+ */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
@@ -692,9 +684,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 }
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
@@ -702,18 +694,22 @@ void Error_Handler(void)
   __disable_irq();
   while (1)
   {
+    // Stay in this loop to indicate an error
+    // You can also toggle an LED or send a message to the LCD here
+    HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
+    osDelay(500); // Delay to make the error indication visible
   }
   /* USER CODE END Error_Handler_Debug */
 }
 
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
